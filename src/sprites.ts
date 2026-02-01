@@ -143,15 +143,19 @@ export class SpritesClient {
 
     const sprite = await this.create(name)
 
-    // Apply default network policy (amp install + LLM APIs)
+    // Apply default network policy - amp needs access to its API and LLM providers
     await this.setNetworkPolicy(name, [
-      // Amp CLI installation
+      // Amp CLI and API
       { action: "allow", domain: "ampcode.com" },
       { action: "allow", domain: "*.ampcode.com" },
       { action: "allow", domain: "storage.googleapis.com" },
-      // LLM APIs
+      { action: "allow", domain: "*.storage.googleapis.com" },
+      // LLM APIs (direct and via Amp proxy)
       { action: "allow", domain: "api.anthropic.com" },
       { action: "allow", domain: "api.openai.com" },
+      // CDN/infrastructure that amp might use
+      { action: "allow", domain: "*.cloudflare.com" },
+      { action: "allow", domain: "*.googleapis.com" },
     ])
 
     return sprite
@@ -214,6 +218,14 @@ export class SpritesClient {
         if (!resolved) {
           resolved = true
           ws.close()
+          // Include partial output info for debugging
+          const debugInfo = {
+            stdoutLen: stdout.length,
+            stderrLen: stderr.length,
+            stdoutPreview: stdout.slice(0, 1000),
+            stderrPreview: stderr.slice(0, 500),
+          }
+          log.error("Sprites exec timeout", { name, timeoutMs, ...debugInfo })
           reject(new Error(`Sprites exec timeout after ${timeoutMs}ms`))
         }
       }, timeoutMs)

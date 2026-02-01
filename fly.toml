@@ -12,6 +12,11 @@ primary_region = 'syd'
 [env]
   AGENT_MODE = 'smart'
   NODE_ENV = 'production'
+  SESSIONS_FILE = '/data/sessions.json'
+
+[mounts]
+  source = 'janebot_data'
+  destination = '/data'
 
 [[vm]]
   memory = '512mb'

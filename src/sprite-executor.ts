@@ -15,8 +15,14 @@ import * as log from "./logger.js"
 import * as sessions from "./sessions.js"
 import * as pool from "./sprite-pool.js"
 
+// Track sprites that failed health checks (avoid retrying bad sprites)
+const unhealthySprites = new Set<string>()
+
 // Enable debug logging with DEBUG_AMP_OUTPUT=1
 const DEBUG_AMP_OUTPUT = process.env.DEBUG_AMP_OUTPUT === "1"
+
+// Timeout for amp execution (default 10 minutes, configurable via SPRITE_EXEC_TIMEOUT_MS)
+const EXEC_TIMEOUT_MS = parseInt(process.env.SPRITE_EXEC_TIMEOUT_MS || "600000", 10)
 
 // Cache of sprites that have amp installed (in-memory, rebuilt on restart)
 const ampInstalledSprites = new Set<string>()
@@ -46,11 +52,13 @@ async function ensureAmpInstalled(
     return
   }
 
+  log.info("Checking amp installation", { sprite: spriteName })
+
   const check = await client.exec(spriteName, [
     "bash",
     "-c",
     `${AMP_BIN} --version 2>/dev/null || echo "NOT_INSTALLED"`,
-  ])
+  ], { timeoutMs: 30000 }) // 30s timeout for version check
 
   if (!check.stdout.includes("NOT_INSTALLED")) {
     ampInstalledSprites.add(spriteName)
@@ -63,7 +71,7 @@ async function ensureAmpInstalled(
     "bash",
     "-c",
     "curl -fsSL https://ampcode.com/install.sh | bash",
-  ])
+  ], { timeoutMs: 120000 }) // 2 minute timeout for install
 
   ampInstalledSprites.add(spriteName)
   log.info("Amp CLI installed", { sprite: spriteName })
@@ -259,20 +267,31 @@ export async function executeInSprite(
     }
   }
 
+  // Health check before proceeding (catches frozen/unresponsive sprites)
+  const healthy = await pool.healthCheck(client, spriteName)
+  if (!healthy) {
+    unhealthySprites.add(spriteName)
+    throw new Error(`Sprite ${spriteName} failed health check - may be frozen or unresponsive`)
+  }
+
   // Ensure amp is installed (no-op if already installed or from pool)
   await ensureAmpInstalled(client, spriteName)
 
   // Write settings file with system prompt if provided (same pattern as SDK)
   const settingsFile = "/tmp/amp-settings.json"
   if (options.systemPrompt) {
+    log.info("Writing settings file", { sprite: spriteName })
     const settings = {
       "amp.systemPrompt": options.systemPrompt,
     }
+    // Use printf instead of stdin to avoid potential websocket stdin issues
+    const jsonContent = JSON.stringify(settings).replace(/'/g, "'\\''")
     await client.exec(spriteName, [
       "bash",
       "-c",
-      `cat > ${settingsFile}`,
-    ], { stdin: JSON.stringify(settings, null, 2) })
+      `printf '%s' '${jsonContent}' > ${settingsFile}`,
+    ], { timeoutMs: 30000 })
+    log.info("Settings file written", { sprite: spriteName })
   }
 
   // Build CLI args: amp [threads continue <id>] --execute --stream-json [options]
@@ -312,6 +331,7 @@ export async function executeInSprite(
   log.info("Executing amp in sprite", {
     sprite: spriteName,
     hasExistingThread: !!existingSession?.ampThreadId,
+    timeoutMs: EXEC_TIMEOUT_MS,
     args: args.join(" "),
   })
 
@@ -319,7 +339,7 @@ export async function executeInSprite(
   const result = await client.exec(spriteName, args, {
     env,
     stdin: options.prompt + "\n",
-    timeoutMs: 300000, // 5 minutes
+    timeoutMs: EXEC_TIMEOUT_MS,
   })
 
   if (DEBUG_AMP_OUTPUT) {

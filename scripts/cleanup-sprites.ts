@@ -16,8 +16,9 @@ if (!token) {
 const client = new SpritesClient(token)
 
 async function main() {
-  const sprites = await client.list("jane-test-")
-  console.log(`Found ${sprites.length} test sprites to clean up`)
+  const prefix = process.argv[2] || "jane-test-"
+  const sprites = await client.list(prefix)
+  console.log(`Found ${sprites.length} sprites with prefix "${prefix}" to clean up`)
 
   for (const s of sprites) {
     await client.delete(s.name)

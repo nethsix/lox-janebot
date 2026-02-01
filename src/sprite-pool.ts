@@ -109,13 +109,19 @@ async function createWarmSprite(
     // Create sprite
     await client.create(name)
 
-    // Apply network policy
+    // Apply network policy - amp needs access to its API and LLM providers
     await client.setNetworkPolicy(name, [
+      // Amp CLI and API
       { action: "allow", domain: "ampcode.com" },
       { action: "allow", domain: "*.ampcode.com" },
       { action: "allow", domain: "storage.googleapis.com" },
+      { action: "allow", domain: "*.storage.googleapis.com" },
+      // LLM APIs (direct and via Amp proxy)
       { action: "allow", domain: "api.anthropic.com" },
       { action: "allow", domain: "api.openai.com" },
+      // CDN/infrastructure that amp might use
+      { action: "allow", domain: "*.cloudflare.com" },
+      { action: "allow", domain: "*.googleapis.com" },
     ])
 
     // Install amp
@@ -165,6 +171,26 @@ export function claimSprite(threadKey: string): string | null {
     }
   }
   return null
+}
+
+/**
+ * Verify a sprite is healthy by running a quick command.
+ * Returns true if healthy, false if unresponsive.
+ */
+export async function healthCheck(
+  client: SpritesClient,
+  spriteName: string
+): Promise<boolean> {
+  try {
+    log.info("Health check", { sprite: spriteName })
+    const result = await client.exec(spriteName, ["echo", "ok"], { timeoutMs: 10000 })
+    const healthy = result.exitCode === 0 && result.stdout.includes("ok")
+    log.info("Health check result", { sprite: spriteName, healthy })
+    return healthy
+  } catch (e) {
+    log.error("Health check failed", { sprite: spriteName, error: e })
+    return false
+  }
 }
 
 /**
