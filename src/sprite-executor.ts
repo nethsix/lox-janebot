@@ -22,7 +22,11 @@ const unhealthySprites = new Set<string>()
 const DEBUG_AMP_OUTPUT = process.env.DEBUG_AMP_OUTPUT === "1"
 
 // Timeout for amp execution (default 10 minutes, configurable via SPRITE_EXEC_TIMEOUT_MS)
-const EXEC_TIMEOUT_MS = parseInt(process.env.SPRITE_EXEC_TIMEOUT_MS || "600000", 10)
+const DEFAULT_EXEC_TIMEOUT_MS = 600000
+const parsedTimeout = parseInt(process.env.SPRITE_EXEC_TIMEOUT_MS || "", 10)
+const EXEC_TIMEOUT_MS = Number.isFinite(parsedTimeout) && parsedTimeout > 0 
+  ? parsedTimeout 
+  : DEFAULT_EXEC_TIMEOUT_MS
 
 // Cache of sprites that have amp installed (in-memory, rebuilt on restart)
 const ampInstalledSprites = new Set<string>()
