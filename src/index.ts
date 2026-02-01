@@ -39,7 +39,7 @@ function formatErrorForUser(error: unknown): string {
 
   // Authentication/configuration issues
   if (message.includes("No API key") || message.includes("login flow")) {
-    return "I'm not configured properly. Please check the AMP_ACCESS_TOKEN."
+    return "I'm not configured properly. Please check the AMP_API_KEY."
   }
   if (message.includes("invalid_auth") || message.includes("token")) {
     return "Authentication failed. Please check the bot configuration."
