@@ -1,0 +1,26 @@
+# fly.toml - Fly.io configuration
+# Deploy with: fly launch --copy-config && fly deploy
+
+app = "janebot"
+primary_region = "syd"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# No HTTP service needed - we use Slack Socket Mode
+# The app connects outbound to Slack, no inbound ports required
+
+[env]
+  NODE_ENV = "production"
+  AGENT_MODE = "smart"
+
+# Set secrets with:
+#   fly secrets set SLACK_BOT_TOKEN=xoxb-...
+#   fly secrets set SLACK_APP_TOKEN=xapp-...
+#   fly secrets set SLACK_SIGNING_SECRET=...
+#   fly secrets set AMP_ACCESS_TOKEN=...
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
