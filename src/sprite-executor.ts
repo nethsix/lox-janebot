@@ -80,6 +80,7 @@ export interface SpriteExecutorOptions {
 export interface GeneratedFile {
   path: string
   filename: string
+  data?: Buffer  // Base64-decoded image data (if available from amp output)
 }
 
 export interface SpriteExecutorResult {
@@ -155,43 +156,39 @@ function parseAmpOutput(stdout: string): {
         if (messageContent) {
           for (const block of messageContent) {
             if (block.type === "tool_result") {
-              // The content can be a JSON array with objects containing savedPath
-              const blockContent = block.content
-              const contentArray = Array.isArray(blockContent) ? blockContent : [blockContent]
+              // Content is a JSON string: "[{\"type\":\"image\",\"data\":\"...\",\"savedPath\":\"...\"}]"
+              let items: Array<Record<string, unknown>> = []
               
-              if (DEBUG_AMP_OUTPUT) {
-                log.info("Found tool_result", { contentType: typeof blockContent, isArray: Array.isArray(blockContent) })
+              if (typeof block.content === "string") {
+                try {
+                  const parsed = JSON.parse(block.content)
+                  items = Array.isArray(parsed) ? parsed : [parsed]
+                } catch {
+                  // Not JSON, skip
+                }
+              } else if (Array.isArray(block.content)) {
+                items = block.content as Array<Record<string, unknown>>
               }
-              
-              for (const item of contentArray) {
-                // Check if item has savedPath (painter tool result)
-                if (item && typeof item === "object" && !Array.isArray(item)) {
-                  const itemObj = item as Record<string, unknown>
-                  if (itemObj.savedPath) {
-                    const filePath = String(itemObj.savedPath).replace(/^file:\/\//, "")
-                    const filename = filePath.split("/").pop() ?? "generated-image.png"
-                    if (!generatedFiles.some(f => f.path === filePath)) {
-                      generatedFiles.push({ path: filePath, filename })
-                      if (DEBUG_AMP_OUTPUT) {
-                        log.info("Found savedPath in tool_result", { filePath })
-                      }
+
+              // Extract images: {type:"image", data:"base64...", savedPath:"file:///..."}
+              for (const item of items) {
+                if (item?.type === "image" && item.savedPath) {
+                  const filePath = String(item.savedPath).replace(/^file:\/\//, "")
+                  const filename = filePath.split("/").pop() ?? "generated-image.png"
+                  
+                  let imageData: Buffer | undefined
+                  if (item.data && typeof item.data === "string") {
+                    try {
+                      imageData = Buffer.from(String(item.data), "base64")
+                    } catch {
+                      // Invalid base64
                     }
                   }
-                }
-                // Also check for string content with paths
-                if (typeof item === "string") {
-                  const patterns = [
-                    /(?:saved|generated|created|wrote|output)(?:\s+(?:to|at|in))?\s+([^\s]+\.(png|jpg|jpeg|gif|webp))/gi,
-                    /(\/[^\s]+\.(png|jpg|jpeg|gif|webp))/gi,
-                  ]
-                  for (const pattern of patterns) {
-                    let match
-                    while ((match = pattern.exec(item)) !== null) {
-                      const filePath = match[1].replace(/^file:\/\//, "")
-                      const filename = filePath.split("/").pop() ?? "generated-image.png"
-                      if (!generatedFiles.some(f => f.path === filePath)) {
-                        generatedFiles.push({ path: filePath, filename })
-                      }
+                  
+                  if (!generatedFiles.some(f => f.path === filePath)) {
+                    generatedFiles.push({ path: filePath, filename, data: imageData })
+                    if (DEBUG_AMP_OUTPUT) {
+                      log.info("Found image", { filePath, hasData: !!imageData, dataSize: imageData?.length })
                     }
                   }
                 }
@@ -328,7 +325,14 @@ export async function executeInSprite(
   const { threadId, content, generatedFiles } = parseAmpOutput(result.stdout)
 
   if (generatedFiles.length > 0) {
-    log.info("Found generated files", { count: generatedFiles.length, files: generatedFiles })
+    // Log file info without the binary data
+    const fileSummary = generatedFiles.map(f => ({
+      path: f.path,
+      filename: f.filename,
+      hasData: !!f.data,
+      dataSize: f.data?.length,
+    }))
+    log.info("Found generated files", { count: generatedFiles.length, files: fileSummary })
   }
 
   // Store session for thread continuity

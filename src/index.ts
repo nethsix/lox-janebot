@@ -149,18 +149,30 @@ async function uploadGeneratedFiles(
   files: GeneratedFile[],
   channelId: string,
   threadTs: string
-): Promise<void> {
-  if (files.length === 0) return
+): Promise<string[]> {
+  const errors: string[] = []
+  if (files.length === 0) return errors
 
   const token = config.spritesToken
-  if (!token) return
-
-  const spritesClient = new SpritesClient(token)
+  const spritesClient = token ? new SpritesClient(token) : null
 
   for (const file of files) {
     try {
-      log.info("Downloading file from sprite", { sprite: spriteName, path: file.path })
-      const fileData = await spritesClient.downloadFile(spriteName, file.path)
+      let fileData: Buffer
+
+      // Prefer embedded data (from amp output) over downloading from Sprite
+      if (file.data) {
+        log.info("Using embedded image data", { filename: file.filename, size: file.data.length })
+        fileData = file.data
+      } else if (spritesClient) {
+        // Fall back to downloading from Sprite
+        log.info("Downloading file from sprite", { sprite: spriteName, path: file.path })
+        fileData = await spritesClient.downloadFile(spriteName, file.path)
+      } else {
+        log.warn("No image data and no Sprites client, skipping file", { path: file.path })
+        errors.push(`Could not upload ${file.filename}: no image data available`)
+        continue
+      }
 
       log.info("Uploading file to Slack", { filename: file.filename, size: fileData.length })
 
@@ -175,9 +187,11 @@ async function uploadGeneratedFiles(
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
       log.error(`Failed to upload file ${file.path}`, err)
-      log.info("Upload error details", { filename: file.filename, path: file.path, error: errMsg })
+      errors.push(`Failed to upload ${file.filename}: ${errMsg}`)
     }
   }
+  
+  return errors
 }
 
 // Tools enabled for local execution
@@ -389,13 +403,16 @@ app.event("app_mention", async ({ event, client, say }) => {
     }
 
     // Upload any generated files (images from painter tool, etc.)
+    let uploadErrors: string[] = []
     if (result.generatedFiles?.length && result.spriteName) {
-      await uploadGeneratedFiles(client, result.spriteName, result.generatedFiles, channelId, slackThreadTs)
+      uploadErrors = await uploadGeneratedFiles(client, result.spriteName, result.generatedFiles, channelId, slackThreadTs)
     }
 
     // Send response (chunked if needed for Slack's 4000 char limit)
-    const content =
-      result.content || "I completed the task but have no response to share."
+    let content = result.content || "I completed the task but have no response to share."
+    if (uploadErrors.length > 0) {
+      content += `\n\n_Note: ${uploadErrors.join("; ")}_`
+    }
     const formatted = cleanSlackMessage(markdownToSlack(content))
     await sendChunkedResponse(say, formatted, slackThreadTs)
 
@@ -522,11 +539,15 @@ app.event("message", async ({ event, client, say }) => {
     }
 
     // Upload any generated files (images from painter tool, etc.)
+    let uploadErrors: string[] = []
     if (result.generatedFiles?.length && result.spriteName) {
-      await uploadGeneratedFiles(client, result.spriteName, result.generatedFiles, channelId, slackThreadTs)
+      uploadErrors = await uploadGeneratedFiles(client, result.spriteName, result.generatedFiles, channelId, slackThreadTs)
     }
 
-    const content = result.content || "Done."
+    let content = result.content || "Done."
+    if (uploadErrors.length > 0) {
+      content += `\n\n_Note: ${uploadErrors.join("; ")}_`
+    }
     const formatted = cleanSlackMessage(markdownToSlack(content))
     await sendChunkedResponse(say, formatted, slackThreadTs)
 
