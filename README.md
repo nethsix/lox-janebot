@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="assets/icon.png" width="128" alt="Jane" />
-</p>
+<img src="assets/icon.png" width="128" alt="Jane" />
 
 # janebot
 
