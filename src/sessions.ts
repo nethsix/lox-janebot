@@ -14,6 +14,7 @@ export interface Session {
   userId: string
   createdAt: string
   updatedAt: string
+  lastSlackContextTs?: string
 }
 
 export interface SessionStore {
@@ -128,6 +129,24 @@ export function updateAmpThreadId(
   const existing = store.sessions[key]
   if (existing) {
     existing.ampThreadId = ampThreadId
+    existing.updatedAt = new Date().toISOString()
+    dirty = true
+    scheduleSave()
+  }
+}
+
+/**
+ * Update the last Slack context timestamp for a session.
+ */
+export function updateLastSlackContextTs(
+  channelId: string,
+  threadTs: string,
+  ts: string
+): void {
+  const key = getKey(channelId, threadTs)
+  const existing = store.sessions[key]
+  if (existing) {
+    existing.lastSlackContextTs = ts
     existing.updatedAt = new Date().toISOString()
     dirty = true
     scheduleSave()

@@ -83,36 +83,54 @@ const app = new App({
   logLevel: LogLevel.INFO,
 })
 
+// Cache bot user ID to avoid repeated auth.test() calls
+let cachedBotUserId: string | undefined
+
+async function getBotUserId(client: typeof app.client): Promise<string | undefined> {
+  if (cachedBotUserId) return cachedBotUserId
+  const authTest = await client.auth.test()
+  cachedBotUserId = authTest.user_id
+  return cachedBotUserId
+}
+
 /**
- * Fetch Slack thread history as fallback context when no Amp thread exists.
- * Returns formatted string of previous messages, excluding bot's own messages.
+ * Fetch Slack thread history as context for the LLM.
+ * Supports incremental fetching via afterTs to avoid resending old context.
+ * Filters out bot messages and messages that @mention the bot (already in Amp thread).
  */
 async function fetchThreadContext(
   client: typeof app.client,
   channel: string,
   threadTs: string,
-  botUserId: string | undefined
+  botUserId: string | undefined,
+  opts?: { afterTs?: string; beforeTs?: string }
 ): Promise<string | null> {
   try {
     const result = await client.conversations.replies({
       channel,
       ts: threadTs,
-      limit: 20, // Last 20 messages should be enough context
+      limit: 50,
     })
 
     if (!result.messages || result.messages.length <= 1) {
-      return null // No history or just the current message
+      return null
     }
 
-    // Format messages, skip bot's own messages to avoid confusion
+    const botMentionPattern = botUserId ? new RegExp(`<@${botUserId}>`) : null
+
     const formatted = result.messages
-      .slice(0, -1) // Exclude the latest message (we already have it)
-      .filter((m) => m.user !== botUserId) // Skip bot's messages
+      .filter((m) => {
+        if (m.user === botUserId) return false
+        if (opts?.afterTs && Number(m.ts) <= Number(opts.afterTs)) return false
+        if (opts?.beforeTs && Number(m.ts) >= Number(opts.beforeTs)) return false
+        if (botMentionPattern && m.text && botMentionPattern.test(m.text)) return false
+        return true
+      })
       .map((m) => {
         const text = m.text?.replace(/<@[A-Z0-9]+>/g, "").trim() || ""
         return `[${m.user}]: ${text}`
       })
-      .filter((line) => line.includes(": ") && line.split(": ")[1]) // Skip empty
+      .filter((line) => line.includes(": ") && line.split(": ")[1])
       .join("\n")
 
     return formatted || null
@@ -377,18 +395,25 @@ app.event("app_mention", async ({ event, client, say }) => {
 
     const existingSession = sessions.get(channelId, slackThreadTs)
 
-    // If no Amp thread exists but we're in a Slack thread, fetch history as context
+    // Fetch Slack thread context for messages the bot hasn't seen
     const isInThread = event.thread_ts !== undefined
-    if (!existingSession?.ampThreadId && isInThread) {
-      const authTest = await client.auth.test()
+    if (isInThread) {
+      const botUserId = await getBotUserId(client)
       const history = await fetchThreadContext(
         client,
         channelId,
         slackThreadTs,
-        authTest.user_id
+        botUserId,
+        {
+          afterTs: existingSession?.lastSlackContextTs,
+          beforeTs: event.ts,
+        }
       )
       if (history) {
-        prompt = `Previous messages in this thread:\n${history}\n\nLatest message: ${prompt}`
+        const label = existingSession?.lastSlackContextTs
+          ? "New messages in this Slack thread since last time"
+          : "Previous messages in this Slack thread"
+        prompt = `${label}:\n${history}\n\nLatest message: ${prompt}`
       }
     }
 
@@ -401,6 +426,9 @@ app.event("app_mention", async ({ event, client, say }) => {
     if (result.threadId && config.allowLocalExecution && !config.spritesToken) {
       sessions.set(channelId, slackThreadTs, result.threadId, userId)
     }
+
+    // Advance the Slack context cursor
+    sessions.updateLastSlackContextTs(channelId, slackThreadTs, event.ts)
 
     // Upload any generated files (images from painter tool, etc.)
     let uploadErrors: string[] = []
@@ -514,18 +542,25 @@ app.event("message", async ({ event, client, say }) => {
 
     const existingSession = sessions.get(channelId, slackThreadTs)
 
-    // If no Amp thread exists but we're in a Slack thread, fetch history as context
+    // Fetch Slack thread context for messages the bot hasn't seen
     const isInThread = messageEvent.thread_ts !== undefined
-    if (!existingSession?.ampThreadId && isInThread) {
-      const authTest = await client.auth.test()
+    if (isInThread) {
+      const botUserId = await getBotUserId(client)
       const history = await fetchThreadContext(
         client,
         channelId,
         slackThreadTs,
-        authTest.user_id
+        botUserId,
+        {
+          afterTs: existingSession?.lastSlackContextTs,
+          beforeTs: messageEvent.ts,
+        }
       )
       if (history) {
-        prompt = `Previous messages in this thread:\n${history}\n\nLatest message: ${prompt}`
+        const label = existingSession?.lastSlackContextTs
+          ? "New messages in this Slack thread since last time"
+          : "Previous messages in this Slack thread"
+        prompt = `${label}:\n${history}\n\nLatest message: ${prompt}`
       }
     }
 
@@ -537,6 +572,9 @@ app.event("message", async ({ event, client, say }) => {
     if (result.threadId && config.allowLocalExecution && !config.spritesToken) {
       sessions.set(channelId, slackThreadTs, result.threadId, userId)
     }
+
+    // Advance the Slack context cursor
+    sessions.updateLastSlackContextTs(channelId, slackThreadTs, messageEvent.ts)
 
     // Upload any generated files (images from painter tool, etc.)
     let uploadErrors: string[] = []
