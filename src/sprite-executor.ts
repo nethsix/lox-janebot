@@ -48,6 +48,9 @@ interface AmpStreamMessage {
 /**
  * Ensure amp CLI is installed in a Sprite.
  */
+// Max age before we force a reinstall of amp in a sprite
+const AMP_MAX_AGE_MS = 4 * 60 * 60 * 1000 // 4 hours
+
 async function ensureAmpInstalled(
   client: SpritesClient,
   spriteName: string
@@ -62,23 +65,38 @@ async function ensureAmpInstalled(
     "bash",
     "-c",
     `${AMP_BIN} --version 2>/dev/null || echo "NOT_INSTALLED"`,
-  ], { timeoutMs: 30000 }) // 30s timeout for version check
+  ], { timeoutMs: 30000 })
 
-  if (!check.stdout.includes("NOT_INSTALLED")) {
+  if (check.stdout.includes("NOT_INSTALLED")) {
+    log.info("Installing amp CLI in sprite", { sprite: spriteName })
+    await client.exec(spriteName, [
+      "bash",
+      "-c",
+      "curl -fsSL https://ampcode.com/install.sh | bash",
+    ], { timeoutMs: 120000 })
     ampInstalledSprites.add(spriteName)
-    log.info("Amp CLI already installed", { sprite: spriteName })
+    log.info("Amp CLI installed", { sprite: spriteName })
     return
   }
 
-  log.info("Installing amp CLI in sprite", { sprite: spriteName })
-  await client.exec(spriteName, [
-    "bash",
-    "-c",
-    "curl -fsSL https://ampcode.com/install.sh | bash",
-  ], { timeoutMs: 120000 }) // 2 minute timeout for install
+  // Check if installed version is too old (parse "released YYYY-MM-DDTHH:MM:SS" from --version)
+  const releaseMatch = check.stdout.match(/released (\d{4}-\d{2}-\d{2}T[\d:]+\.\d+Z)/)
+  if (releaseMatch) {
+    const releaseAge = Date.now() - new Date(releaseMatch[1]).getTime()
+    if (releaseAge > AMP_MAX_AGE_MS) {
+      log.info("Amp CLI outdated, updating", { sprite: spriteName, version: check.stdout.trim() })
+      await client.exec(spriteName, [
+        "bash",
+        "-c",
+        "curl -fsSL https://ampcode.com/install.sh | bash",
+      ], { timeoutMs: 120000 })
+      log.info("Amp CLI updated", { sprite: spriteName })
+    } else {
+      log.info("Amp CLI current", { sprite: spriteName, version: check.stdout.trim() })
+    }
+  }
 
   ampInstalledSprites.add(spriteName)
-  log.info("Amp CLI installed", { sprite: spriteName })
 }
 
 export interface SpriteExecutorOptions {
