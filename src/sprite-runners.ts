@@ -80,19 +80,23 @@ async function initRunner(runner: Runner): Promise<void> {
 
   const existing = await client.get(name)
   if (existing) {
-    const checkpoints = await client.listCheckpoints(name)
-    const cleanCheckpoint = checkpoints.find((c) => c.comment === CLEAN_CHECKPOINT)
-    if (cleanCheckpoint) {
-      log.info("Runner already set up with checkpoint", { name, checkpointId: cleanCheckpoint.id })
-      try {
-        await client.restoreCheckpoint(name, cleanCheckpoint.id)
-        runner.checkpointId = cleanCheckpoint.id
-        return
-      } catch (err) {
-        log.warn("Checkpoint restore failed, will rebuild", { name, error: err })
+    try {
+      const checkpoints = await client.listCheckpoints(name)
+      const cleanCheckpoint = checkpoints.find((c) => c.comment === CLEAN_CHECKPOINT)
+      if (cleanCheckpoint) {
+        log.info("Runner already set up with checkpoint", { name, checkpointId: cleanCheckpoint.id })
+        try {
+          await client.restoreCheckpoint(name, cleanCheckpoint.id)
+          runner.checkpointId = cleanCheckpoint.id
+          return
+        } catch (err) {
+          log.warn("Checkpoint restore failed, will rebuild", { name, error: err })
+        }
+      } else {
+        log.info("Runner exists but no clean checkpoint, rebuilding", { name })
       }
-    } else {
-      log.info("Runner exists but no clean checkpoint, rebuilding", { name })
+    } catch (err) {
+      log.warn("Failed to list checkpoints, deleting broken sprite", { name, error: err instanceof Error ? err.message : String(err) })
     }
     await client.delete(name)
   }
