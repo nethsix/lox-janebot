@@ -25,6 +25,10 @@ export interface JanebotConfig {
   // Sprites (required for sandboxed execution)
   spritesToken: string | undefined
 
+  // Git identity for commits made in sprites
+  gitAuthorName: string | undefined
+  gitAuthorEmail: string | undefined
+
   // Local execution (requires explicit opt-in, no sandbox)
   allowLocalExecution: boolean
 }
@@ -66,6 +70,8 @@ export const config: JanebotConfig = {
   allowedChannelIds: parseList(process.env.ALLOWED_CHANNEL_IDS),
   mcpServers: parseMcpServers(),
   spritesToken: process.env.SPRITES_TOKEN,
+  gitAuthorName: process.env.GIT_AUTHOR_NAME,
+  gitAuthorEmail: process.env.GIT_AUTHOR_EMAIL,
   allowLocalExecution: process.env.ALLOW_LOCAL_EXECUTION === "true",
 }
 
