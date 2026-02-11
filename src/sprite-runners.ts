@@ -59,10 +59,15 @@ async function initRunner(index: number): Promise<void> {
     const hasClean = checkpoints.some((c) => c.comment === CLEAN_CHECKPOINT)
     if (hasClean) {
       log.info("Runner already set up with checkpoint", { name })
-      await client.restoreCheckpoint(name, CLEAN_CHECKPOINT)
-      return
+      try {
+        await client.restoreCheckpoint(name, CLEAN_CHECKPOINT)
+        return
+      } catch (err) {
+        log.warn("Checkpoint restore failed, will rebuild", { name, error: err })
+      }
+    } else {
+      log.info("Runner exists but no clean checkpoint, rebuilding", { name })
     }
-    log.info("Runner exists but no clean checkpoint, rebuilding", { name })
     await client.delete(name)
   }
 
