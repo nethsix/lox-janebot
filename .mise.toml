@@ -1,4 +1,4 @@
 [tools]
-node = "22"
-pnpm = "latest"
-flyctl = "latest"
+node = "22.22.0"
+pnpm = "10.29.3"
+flyctl = "0.4.11"

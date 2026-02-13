@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+
+if [[ -z "${BUILDKITE_COMMAND:-}" ]]; then
+  exit 0
+fi
+
+mise exec -- bash -lc "$BUILDKITE_COMMAND"
