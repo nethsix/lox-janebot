@@ -51,3 +51,25 @@ fly launch --copy-config
 fly secrets set SLACK_BOT_TOKEN=xoxb-... SLACK_APP_TOKEN=xapp-... ANTHROPIC_API_KEY=sk-ant-...
 fly deploy
 ```
+
+## MCP Servers/Skills
+
+### Using an MCP Server/Skill
+
+* Check `./.pi/skills` directory for the MCP Server / Skill that you are looking for
+  * Example: If you want to access [Notion](https://notion.co), check to see if `./.pi/skills/notion/SKILL/md` exists
+* If it does not, see section [Adding an MCP Server/Skill](#adding-an-mcp-serverskill)
+* Add to `.env`, the environment variable named `<SKILL>_TOKEN`
+  * Example: Add to `.env`  `NOTION_TOKEN` and its value
+
+### Adding an MCP Server/Skill
+
+pi's principle encourages the use a combination of `skills.md`, `curl` with auth, e.g., API tokens
+instead of using MCP servers.
+
+To add an 'MCP Server'/skill, here are some conventions:
+
+* Create skill with appropriate name in `./.pi/skills/<SKILL_NAME>/SKILL>md`
+  * Example, for [Notion](https://notion.so), create `./.pi/skills/notion/SKILL.md`
+* Edit `.env`, to add an environment variables with name `<SKILL_NAME>_TOKEN`
+  * Example, for [Notion](https://notion.so), add the environment variable `NOTION_TOKEN` and its value
