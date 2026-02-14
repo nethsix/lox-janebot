@@ -42,12 +42,19 @@ function parseList(value: string | undefined): string[] {
 }
 
 function parseMcpServers(): Record<string, McpServerConfig> {
-  const servers: Record<string, McpServerConfig> = {}
   const mcpConfig = process.env.MCP_SERVERS
 
-  if (!mcpConfig) return servers
+  if (!mcpConfig) return {}
 
-  // Format: "name1:command1:arg1,arg2;name2:command2:arg1"
+  const trimmed = mcpConfig.trim()
+
+  // JSON format: {"name": {"command": "npx", "args": ["-y", "mcp-remote", "https://..."], "env": {"KEY": "val"}}}
+  if (trimmed.startsWith("{")) {
+    return JSON.parse(trimmed) as Record<string, McpServerConfig>
+  }
+
+  // Legacy string format: "name1:command1:arg1,arg2;name2:command2:arg1"
+  const servers: Record<string, McpServerConfig> = {}
   for (const entry of mcpConfig.split(";")) {
     const [name, command, ...args] = entry.split(":")
     if (name && command) {
