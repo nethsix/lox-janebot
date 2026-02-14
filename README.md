@@ -38,6 +38,20 @@ Empty allowlists mean no restrictions.
 
 ## Run locally
 
+In `.env`:
+
+* Enable local execution:
+  * `ALLOW_LOCAL_EXECUTION=true`
+
+* Define any additional mcp servers in:
+  * `MCP_SERVERS`
+
+In `src/index.ts`:
+
+* Explicitly add the name of any defined mcp servers in:
+  * `LOCAL_ENABLED_TOOLS`
+
+
 ```bash
 pnpm dev
 ```
